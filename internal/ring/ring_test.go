@@ -151,6 +151,52 @@ func TestRing_RemoveNode(t *testing.T) {
 	}
 }
 
+// TestRing_RebalanceFraction_CloseToOneOverN verifies consistent hashing property:
+// adding or removing a node rebalances only approximately 1/N of total keys.
+func TestRing_RebalanceFraction_CloseToOneOverN(t *testing.T) {
+	r := New(256)
+	const initialNodes = 5
+	for i := 0; i < initialNodes; i++ {
+		r.AddNode(makeNode(fmt.Sprintf("node-%d", i)))
+	}
+
+	const totalKeys = 10000
+	initialMapping := make(map[string]string, totalKeys)
+	for i := 0; i < totalKeys; i++ {
+		key := fmt.Sprintf("partition:key:%d", i)
+		initialMapping[key] = r.Lookup(key, 1)[0]
+	}
+
+	// 1. Add 6th node. Expected moved fraction ~ 1/6 (16.6%)
+	r.AddNode(makeNode("node-5"))
+	movedOnAdd := 0
+	for key, origNode := range initialMapping {
+		newNode := r.Lookup(key, 1)[0]
+		if newNode != origNode {
+			movedOnAdd++
+			// Any moved key must move to the newly added node!
+			if newNode != "node-5" {
+				t.Fatalf("key %s moved to %s instead of new node-5", key, newNode)
+			}
+		}
+	}
+
+	ratioAdd := float64(movedOnAdd) / float64(totalKeys)
+	// Expect between 12% and 22% (close to 16.7%)
+	if ratioAdd < 0.12 || ratioAdd > 0.22 {
+		t.Fatalf("expected ~16.7%% keys moved on add, got %.2f%% (%d keys)", ratioAdd*100, movedOnAdd)
+	}
+
+	// 2. Remove node-5. Expected moved fraction back to original mapping is exact!
+	r.RemoveNode("node-5")
+	for key, origNode := range initialMapping {
+		currNode := r.Lookup(key, 1)[0]
+		if currNode != origNode {
+			t.Fatalf("key %s did not return to original node %s after removing node-5, mapped to %s", key, origNode, currNode)
+		}
+	}
+}
+
 // TestRing_RemoveNode_NoOp verifies removing absent node is safe.
 func TestRing_RemoveNode_NoOp(t *testing.T) {
 	r := New(16)

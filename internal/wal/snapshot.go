@@ -39,91 +39,38 @@ func WriteSnapshot(dir string, entries []SnapshotEntry) (string, error) {
 	// Sort entries for reproducibility.
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Key < entries[j].Key })
 
-	tmp := filepath.Join(dir, fmt.Sprintf("snap-%d.tmp", time.Now().UnixNano()))
-	f, err := os.Create(tmp)
-	if err != nil {
-		return "", fmt.Errorf("wal.WriteSnapshot create tmp: %w", err)
-	}
-
-	crc := crc32.NewIEEE()
-
-	write := func(b []byte) error {
-		_, err := f.Write(b)
-		if err == nil {
-			crc.Write(b)
-		}
-		return err
-	}
-
-	// Header
+	var buf []byte
 	var hdr [24]byte
 	binary.LittleEndian.PutUint32(hdr[0:], snapshotMagic)
 	binary.LittleEndian.PutUint32(hdr[4:], snapshotVersion)
 	binary.LittleEndian.PutUint64(hdr[8:], uint64(time.Now().UnixNano()))
 	binary.LittleEndian.PutUint64(hdr[16:], uint64(len(entries)))
-	if err := write(hdr[:]); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return "", err
-	}
+	buf = append(buf, hdr[:]...)
 
-	// Entries
 	for _, e := range entries {
-		kLen := uint16(len(e.Key))
-		vLen := uint32(len(e.Value))
-
 		var klenBuf [2]byte
-		binary.LittleEndian.PutUint16(klenBuf[:], kLen)
-		if err := write(klenBuf[:]); err != nil {
-			f.Close()
-			os.Remove(tmp)
-			return "", err
-		}
-		if err := write([]byte(e.Key)); err != nil {
-			f.Close()
-			os.Remove(tmp)
-			return "", err
-		}
+		binary.LittleEndian.PutUint16(klenBuf[:], uint16(len(e.Key)))
+		buf = append(buf, klenBuf[:]...)
+		buf = append(buf, []byte(e.Key)...)
 
 		var vlenBuf [4]byte
-		binary.LittleEndian.PutUint32(vlenBuf[:], vLen)
-		if err := write(vlenBuf[:]); err != nil {
-			f.Close()
-			os.Remove(tmp)
-			return "", err
-		}
-		if err := write(e.Value); err != nil {
-			f.Close()
-			os.Remove(tmp)
-			return "", err
-		}
+		binary.LittleEndian.PutUint32(vlenBuf[:], uint32(len(e.Value)))
+		buf = append(buf, vlenBuf[:]...)
+		buf = append(buf, e.Value...)
 
 		var expBuf [8]byte
 		binary.LittleEndian.PutUint64(expBuf[:], uint64(e.ExpiresAt))
-		if err := write(expBuf[:]); err != nil {
-			f.Close()
-			os.Remove(tmp)
-			return "", err
-		}
+		buf = append(buf, expBuf[:]...)
 	}
 
-	// Checksum
+	checksum := crc32.ChecksumIEEE(buf)
 	var crcBuf [4]byte
-	binary.LittleEndian.PutUint32(crcBuf[:], crc.Sum32())
-	if _, err := f.Write(crcBuf[:]); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return "", err
-	}
+	binary.LittleEndian.PutUint32(crcBuf[:], checksum)
+	buf = append(buf, crcBuf[:]...)
 
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return "", err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return "", err
+	tmp := filepath.Join(dir, fmt.Sprintf("snap-%d.tmp", time.Now().UnixNano()))
+	if err := os.WriteFile(tmp, buf, 0o644); err != nil {
+		return "", fmt.Errorf("wal.WriteSnapshot write tmp: %w", err)
 	}
 
 	final := filepath.Join(dir, fmt.Sprintf("snap-%d.snap", time.Now().UnixNano()))

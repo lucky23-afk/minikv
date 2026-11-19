@@ -1,6 +1,9 @@
 package wal
 
 import (
+	"encoding/binary"
+	"fmt"
+	"hash/crc32"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -539,6 +542,181 @@ func TestSnapshot_DeleteNoSnapshots(t *testing.T) {
 	// Should be a no-op when no snapshots exist.
 	if err := DeleteOldSnapshots(dir); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWAL_Truncate(t *testing.T) {
+	dir := tempDir(t)
+	w, err := Open(dir, FsyncNone, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Append(putRec("k1", []byte("v1"), 0))
+	w.Append(putRec("k2", []byte("v2"), 0))
+	if err := w.Truncate(10); err != nil {
+		t.Fatalf("Truncate: %v", err)
+	}
+	if w.Seq() != 10 {
+		t.Fatalf("expected Seq 10 after truncate, got %d", w.Seq())
+	}
+	w.Append(putRec("k3", []byte("v3"), 0))
+	w.Close()
+
+	recs, err := ReadAll(filepath.Join(dir, "wal.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || recs[0].Key != "k3" || recs[0].Seq != 11 {
+		t.Fatalf("unexpected records after truncate: %+v", recs)
+	}
+}
+
+func TestWAL_CorruptedCRC_MidFile(t *testing.T) {
+	dir := tempDir(t)
+	w, _ := Open(dir, FsyncNone, 0)
+	w.Append(putRec("rec1", []byte("v1"), 0))
+	w.Append(putRec("rec2", []byte("v2"), 0))
+	w.Append(putRec("rec3", []byte("v3"), 0))
+	w.Close()
+
+	// Corrupt bytes in the second record
+	path := filepath.Join(dir, "wal.log")
+	data, _ := os.ReadFile(path)
+	// First record is ~40 bytes. Corrupt byte at offset 55.
+	if len(data) > 60 {
+		data[55] ^= 0xFF
+		os.WriteFile(path, data, 0644)
+	}
+
+	_, err := ReadAll(path)
+	if err == nil {
+		t.Fatal("expected CRC mismatch error on corrupted mid-file record")
+	}
+}
+
+func TestWAL_CrashBetweenSnapshotAndWALTruncate(t *testing.T) {
+	dir := tempDir(t)
+	// Write snapshot with key1=initial
+	_, err := WriteSnapshot(dir, []SnapshotEntry{
+		{Key: "key1", Value: []byte("initial"), ExpiresAt: 0},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// WAL has update to key1 and new key2, simulating crash before WAL truncation
+	w, _ := Open(dir, FsyncNone, 0)
+	w.Append(putRec("key1", []byte("updated"), 0))
+	w.Append(putRec("key2", []byte("second"), 0))
+	w.Close()
+
+	state, err := Recover(dir)
+	if err != nil {
+		t.Fatalf("Recover: %v", err)
+	}
+
+	valMap := make(map[string]string)
+	for _, e := range state.Entries {
+		valMap[e.Key] = string(e.Value)
+	}
+
+	if valMap["key1"] != "updated" {
+		t.Fatalf("expected key1 to be 'updated', got %q", valMap["key1"])
+	}
+	if valMap["key2"] != "second" {
+		t.Fatalf("expected key2 to be 'second', got %q", valMap["key2"])
+	}
+}
+
+func TestWAL_FsyncAlways_NoDataLoss(t *testing.T) {
+	dir := tempDir(t)
+	w, err := Open(dir, FsyncAlways, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const nWrites = 25
+	for i := 0; i < nWrites; i++ {
+		seq, err := w.Append(putRec(fmt.Sprintf("key-%d", i), []byte(fmt.Sprintf("val-%d", i)), 0))
+		if err != nil {
+			t.Fatalf("Append failed: %v", err)
+		}
+		if seq != uint64(i+1) {
+			t.Fatalf("expected seq %d, got %d", i+1, seq)
+		}
+	}
+	// Simulate hard process termination without calling w.Close()
+	// (just leave file as is, fsync was called after each append)
+
+	state, err := Recover(dir)
+	if err != nil {
+		t.Fatalf("Recover after simulated crash: %v", err)
+	}
+
+	if len(state.Entries) != nWrites {
+		t.Fatalf("expected %d recovered entries under FsyncAlways, got %d", nWrites, len(state.Entries))
+	}
+	if state.LastSeq != nWrites {
+		t.Fatalf("expected LastSeq %d, got %d", nWrites, state.LastSeq)
+	}
+}
+
+func TestWAL_Decode_Malformed(t *testing.T) {
+	// Too short
+	_, err := decodeRecord([]byte{1, 2})
+	if err == nil {
+		t.Fatal("expected error on short buffer")
+	}
+
+	// Bad key len
+	badKey := make([]byte, 30)
+	badKey[0] = byte(RecordPut)
+	binary.LittleEndian.PutUint16(badKey[1:3], 500) // key len 500 > buffer
+	_, err = decodeRecord(badKey)
+	if err == nil {
+		t.Fatal("expected error on out-of-bounds key length")
+	}
+
+	// Bad val len
+	badVal := make([]byte, 30)
+	badVal[0] = byte(RecordPut)
+	binary.LittleEndian.PutUint16(badVal[1:3], 2)
+	badVal[3] = 'k'
+	badVal[4] = '1'
+	binary.LittleEndian.PutUint32(badVal[5:9], 1000) // val len 1000 > buffer
+	_, err = decodeRecord(badVal)
+	if err == nil {
+		t.Fatal("expected error on out-of-bounds val length")
+	}
+}
+
+func TestSnapshot_TruncatedFile(t *testing.T) {
+	dir := tempDir(t)
+	// Too short (< 28 bytes)
+	shortFile := filepath.Join(dir, "short.snap")
+	os.WriteFile(shortFile, []byte("short"), 0644)
+	_, err := readSnapshotFile(shortFile)
+	if err == nil {
+		t.Fatal("expected error on short snapshot file")
+	}
+
+	// Bad magic
+	badMagic := make([]byte, 32)
+	badMagicFile := filepath.Join(dir, "badmagic.snap")
+	crc := crc32.ChecksumIEEE(badMagic[:28])
+	binary.LittleEndian.PutUint32(badMagic[28:], crc)
+	os.WriteFile(badMagicFile, badMagic, 0644)
+	_, err = readSnapshotFile(badMagicFile)
+	if err == nil {
+		t.Fatal("expected error on bad magic")
+	}
+}
+
+func TestWAL_Open_Errors(t *testing.T) {
+	// Invalid path on Windows
+	_, err := Open(":\x00invalid", FsyncNone, 0)
+	if err == nil {
+		t.Fatal("expected error on invalid directory path")
 	}
 }
 

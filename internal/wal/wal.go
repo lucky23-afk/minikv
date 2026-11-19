@@ -157,6 +157,20 @@ func (w *WAL) Seq() uint64 {
 	return w.seq
 }
 
+// Truncate clears the WAL file and resets seq to newStartSeq.
+func (w *WAL) Truncate(newStartSeq uint64) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_ = w.f.Close()
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	w.f = f
+	w.seq = newStartSeq
+	return nil
+}
+
 // Close flushes (if needed) and closes the WAL file.
 func (w *WAL) Close() error {
 	if w.policy == FsyncEverySecond && w.stopSync != nil {

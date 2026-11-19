@@ -197,7 +197,67 @@ func (m *Manager) recordAck(nodeID string, seq uint64) {
 	}
 }
 
-// Statuses returns a copy of peer replication statuses.
+// MaxLagBeforeSnapshot is the maximum number of log records a replica can fall behind
+// before a snapshot transfer is required.
+const MaxLagBeforeSnapshot uint64 = 1000
+
+// InboundLogApplier tracks applied sequence numbers on a replica and enforces monotonicity.
+type InboundLogApplier struct {
+	mu         sync.Mutex
+	appliedSeq uint64
+}
+
+// NewInboundLogApplier creates an applier starting at seq.
+func NewInboundLogApplier(startSeq uint64) *InboundLogApplier {
+	return &InboundLogApplier{appliedSeq: startSeq}
+}
+
+// ApplyResult represents the outcome of validating an inbound replication record.
+type ApplyResult string
+
+const (
+	ApplyOK        ApplyResult = "applied"
+	ApplyDuplicate ApplyResult = "duplicate"
+	ApplyGap       ApplyResult = "gap_detected"
+)
+
+// ValidateAndApply checks sequence order:
+// - seq <= appliedSeq: duplicate, ignored
+// - seq == appliedSeq + 1: ok, increment appliedSeq
+// - seq > appliedSeq + 1: gap detected, replica must catch up
+func (a *InboundLogApplier) ValidateAndApply(seq uint64) ApplyResult {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if seq <= a.appliedSeq {
+		return ApplyDuplicate
+	}
+	if seq == a.appliedSeq+1 {
+		a.appliedSeq = seq
+		return ApplyOK
+	}
+	return ApplyGap
+}
+
+// AppliedSeq returns current sequence.
+func (a *InboundLogApplier) AppliedSeq() uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.appliedSeq
+}
+
+// CheckCatchUpMode evaluates if a lagging replica can catch up from WAL logs
+// or if the lag exceeds MaxLagBeforeSnapshot requiring a full snapshot transfer.
+func (m *Manager) CheckCatchUpMode(replicaAppliedSeq, masterSeq uint64) (needsSnapshot bool, lag uint64) {
+	if masterSeq <= replicaAppliedSeq {
+		return false, 0
+	}
+	lag = masterSeq - replicaAppliedSeq
+	if lag > MaxLagBeforeSnapshot {
+		return true, lag
+	}
+	return false, lag
+}
 func (m *Manager) Statuses() []PeerStatus {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

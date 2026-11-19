@@ -92,3 +92,104 @@ func TestGossiper_StateTransitions(t *testing.T) {
 		t.Fatalf("expected node to recover to alive, got %v", m.State)
 	}
 }
+
+func TestGossiper_FlappingAndPartition(t *testing.T) {
+	var mu sync.Mutex
+	status := http.StatusOK
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		st := status
+		mu.Unlock()
+		w.WriteHeader(st)
+	}))
+	defer srv.Close()
+
+	var transitions []NodeState
+	var transMu sync.Mutex
+
+	cfg := Config{
+		HeartbeatInterval: 15 * time.Millisecond,
+		PingTimeout:       10 * time.Millisecond,
+		SuspectTimeout:    40 * time.Millisecond,
+	}
+
+	g := New(cfg, func(m Member, oldState, newState NodeState) {
+		transMu.Lock()
+		transitions = append(transitions, newState)
+		transMu.Unlock()
+	}, nil)
+
+	g.AddMember("flap-node", "127.0.0.1:8001", srv.Listener.Addr().String())
+
+	// Test AddMember update
+	g.AddMember("flap-node", "127.0.0.1:8002", srv.Listener.Addr().String())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go g.Start(ctx)
+
+	// Flap 1: Simulate partition (HTTP 503) -> Suspect
+	mu.Lock()
+	status = http.StatusServiceUnavailable
+	mu.Unlock()
+	time.Sleep(25 * time.Millisecond)
+
+	// Flap 2: Recover quickly -> Alive before Dead
+	mu.Lock()
+	status = http.StatusOK
+	mu.Unlock()
+	time.Sleep(30 * time.Millisecond)
+
+	// Flap 3: Complete partition -> Suspect -> Dead
+	mu.Lock()
+	status = http.StatusBadGateway
+	mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+
+	m, ok := g.GetMember("flap-node")
+	if !ok || m.State != StateDead {
+		t.Fatalf("expected node to be dead after partition, got: %+v", m)
+	}
+
+	// Flap 4: Rejoining after being dead -> Alive
+	mu.Lock()
+	status = http.StatusOK
+	mu.Unlock()
+	time.Sleep(40 * time.Millisecond)
+
+	m, _ = g.GetMember("flap-node")
+	if m.State != StateAlive {
+		t.Fatalf("expected node to rejoin as alive, got: %+v", m)
+	}
+
+	// Test Members list
+	members := g.Members()
+	if len(members) != 1 || members[0].ID != "flap-node" {
+		t.Fatalf("unexpected members: %+v", members)
+	}
+
+	// Test RemoveMember
+	g.RemoveMember("flap-node")
+	if len(g.Members()) != 0 {
+		t.Fatal("expected 0 members after remove")
+	}
+
+	_, found := g.GetMember("nonexistent")
+	if found {
+		t.Fatal("expected nonexistent member to not be found")
+	}
+}
+
+func TestGossiper_Handler(t *testing.T) {
+	g := New(Config{}, nil, nil)
+	g.AddMember("node-1", "127.0.0.1:7000", "127.0.0.1:7001")
+
+	req := httptest.NewRequest(http.MethodGet, "/gossip", nil)
+	rec := httptest.NewRecorder()
+	g.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from gossip handler, got %d", rec.Code)
+	}
+}
