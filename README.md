@@ -1,10 +1,10 @@
 # miniKV
 
-A miniature distributed key-value store in Go (1.22+) featuring consistent hashing with virtual nodes, append-only Write-Ahead Logging with CRC32 integrity checks, O(1) LRU eviction, active min-heap TTL expiration, async/sync replication, gossip-based failure detection, and an embedded web dashboard.
+miniKV is a miniature distributed key-value store in Go (1.22+) featuring consistent hashing with virtual nodes, append-only Write-Ahead Logging with CRC32 frame checksums, O(1) LRU eviction, active min-heap TTL expiration, configurable asynchronous and synchronous replication with automatic failover promotion, gossip-based failure detection, and an embedded minimalist web dashboard.
 
 ---
 
-## Architecture Overview
+## Architecture Diagram
 
 ```mermaid
 graph TD
@@ -31,98 +31,202 @@ graph TD
 
 ---
 
+## Dashboard Interface
+
+![miniKV Dashboard](docs/img/dashboard.png)
+
+The dashboard is served directly from the coordinator binary using `go:embed` without requiring external node or build tools. It offers real-time SSE metric streams, an interactive SVG hash ring partition viewer, key exploration, an integrated command console, and benchmark triggering.
+
+---
+
 ## Key Features
 
-1. **Core Commands**: `GET`, `PUT` (with optional TTL), `DEL`, `EXISTS`, `TTL`, `KEYS` (prefix scan), `STATS`.
-2. **O(1) LRU Cache Eviction**: Backed by `container/list` and hash map. Configurable limits for `max-entries` and `max-bytes` with atomic eviction counters.
-3. **Active TTL Sweeper**: Combines lazy expiry on read with a background min-heap sweeper running every 100ms. No full table scans.
-4. **Reliable Persistence**: Append-only WAL with CRC32 frame checksums and selectable fsync policies (`always`, `every-second`, `none`). Crash recovery replays snapshot followed by WAL logs with graceful handling of torn trailing records.
-5. **Consistent Hashing**: Ring implementation with 128 virtual nodes per physical host, binary search lookup (`sort.Search`), and deterministic key partition mapping.
-6. **Replication & Failover**: Master-to-replica write streaming with sequence tracking. Supports both asynchronous mode and synchronous N-ack confirmation.
-7. **Gossip Failure Detection**: Node liveness detection with `Alive`, `Suspect`, and `Dead` state transitions.
-8. **Minimalist Web Dashboard**: Embedded directly into the coordinator binary via `go:embed`. Built with vanilla JS, HTML5, CSS3, and Alpine.js. Includes cluster status, live SVG hash ring, interactive console, data explorer, and real-time SSE metric streams.
+- **Core Key-Value Engine**: Complete support for `GET`, `PUT` (with optional TTL), `DELETE`, `EXISTS`, `TTL`, `KEYS` prefix scan, and `STATS`.
+- **O(1) LRU Eviction**: Doubly linked list (`container/list`) combined with hash map pointer tracking. Supports both `max-entries` and `max-bytes` constraints with atomic statistics counters.
+- **Dual Expiration Mechanism**: Combines lazy expiration check on key access with an active background min-heap sweeper running every 100 milliseconds without table scans.
+- **Resilient Persistence**: Binary append-only Write-Ahead Log protected by per-record CRC32 checksums. Configurable fsync policies (`always`, `every-second`, `none`). Safe recovery mechanism that verifies snapshot state and gracefully truncates torn trailing log frames.
+- **Consistent Hashing**: 128 virtual nodes per physical host with binary search lookups over 64-bit FNV-1a hashes. Adding or removing a node migrates only approximately 1/N of keys.
+- **Replication with Automatic Failover**: Master-to-replica WAL streaming. Supports both default asynchronous streaming and synchronous mode waiting for N follower confirmations. When a master fails, the surviving replica with the highest applied sequence is promoted.
+- **Gossip Failure Detector**: Lightweight heartbeat tracking with `Alive`, `Suspect`, and `Dead` state transitions and flapping dampening.
+- **Minimalist Web Dashboard**: Embedded pure HTML5, CSS3, and vanilla JS with Alpine.js via CDN. Includes dark and light themes, an interactive console, and live Canvas performance charts.
 
 ---
 
 ## Quickstart
 
-### 1. Build Binaries
+### Local Cluster (Manual or Scripts)
+
+1. Build binaries:
+   ```bash
+   make build
+   ```
+
+2. Start a 3-node cluster with coordinator:
+   ```bash
+   ./scripts/run-cluster.sh
+   ```
+   Or on Windows PowerShell:
+   ```powershell
+   .\scripts\run-cluster.ps1
+   ```
+
+3. Open the web dashboard:
+   **http://localhost:8080**
+
+### Docker Compose
+
+Bring up the complete 3-node cluster and coordinator with persistent volumes and healthchecks:
 ```bash
-go build -o minikv-node ./cmd/minikv-node
-go build -o minikv-coord ./cmd/minikv-coord
-go build -o loadgen ./cmd/loadgen
+docker compose up --build -d
 ```
 
-### 2. Run Local 3-Node Cluster
-On Linux/macOS:
+To shut down and wipe test volumes:
 ```bash
-chmod +x ./scripts/run-cluster.sh
-./scripts/run-cluster.sh
+docker compose down -v
 ```
 
-On Windows (PowerShell):
-```powershell
-.\scripts\run-cluster.ps1
+---
+
+## API Reference & Curl Examples
+
+### Store Key with TTL
+```bash
+curl -X PUT http://localhost:8080/api/v1/kv/user:101 \
+  -H "Content-Type: application/json" \
+  -d '{"value":"Jane Doe","ttl_ms":60000}'
 ```
 
-Once running, access the dashboard at:
-**http://localhost:8080**
+### Store Key with Synchronous Replication (1 Follower Ack)
+```bash
+curl -X PUT http://localhost:8080/api/v1/kv/user:balance \
+  -H "Content-Type: application/json" \
+  -d '{"value":"1500.50","sync":true,"sync_n":1}'
+```
+
+### Get Key
+```bash
+curl http://localhost:8080/api/v1/kv/user:101
+```
+
+### Delete Key
+```bash
+curl -X DELETE http://localhost:8080/api/v1/kv/user:101
+```
+
+### Prefix Scan
+```bash
+curl "http://localhost:8080/api/v1/kv?prefix=user:"
+```
+
+### Cluster Stats
+```bash
+curl http://localhost:8080/api/v1/stats
+```
+
+### Interactive Console via HTTP
+```bash
+curl -X POST http://localhost:8080/api/v1/console \
+  -H "Content-Type: application/json" \
+  -d '{"cmd":"PUT session:abc token123 30000"}'
+```
+
+---
+
+## Configuration Reference
+
+### Storage Node (`cmd/minikv-node`)
+
+| Flag | Default | Description |
+|---|---|---|
+| `--id` | `node-1` | Unique node identifier |
+| `--addr` | `127.0.0.1:7000` | TCP server address for client and replication traffic |
+| `--http-addr` | `127.0.0.1:7001` | Internal HTTP address for gossip and health checks |
+| `--data-dir` | `./data/node-1` | Directory storing WAL files and snapshots |
+| `--max-entries` | `0` | Maximum LRU entries per shard (0 = unlimited) |
+| `--max-bytes` | `0` | Maximum LRU bytes per shard (0 = unlimited) |
+| `--fsync` | `every-second` | Fsync policy: `always`, `every-second`, or `none` |
+
+### Coordinator (`cmd/minikv-coord`)
+
+| Flag | Default | Description |
+|---|---|---|
+| `--addr` | `:8080` | HTTP listen address for gateway, API, and web dashboard |
+| `--nodes` | `""` | Initial comma-separated node list (`id=tcp_addr=http_addr`) |
+| `--vnodes` | `128` | Virtual nodes per physical storage node on hash ring |
 
 ---
 
 ## Benchmark Results
 
-Benchmark conducted locally on the storage cluster with `cmd/loadgen`:
+Benchmark executed directly on the storage cluster using `cmd/loadgen`:
 
-| Metric | Result |
-|---|---|
-| **Concurrency** | 8 Goroutines |
-| **Duration** | 3.0 Seconds |
-| **Read / Write Ratio** | 80% Reads / 20% Writes |
-| **Total Operations** | 12,665 |
-| **Throughput** | **4,220.58 ops/sec** |
-| **Latency p50** | 1.707 ms |
-| **Latency p95** | 3.129 ms |
-| **Latency p99** | 4.330 ms |
-| **Errors** | 0 (0.00%) |
+### Hardware & Environment
+- **Processor**: Intel Core i5-6440HQ @ 2.60GHz (4 physical cores, 4 threads)
+- **Memory**: 12 GB RAM
+- **OS**: Microsoft Windows 11 (64-bit)
+- **Go Version**: go1.24.6 windows/amd64
 
----
+### Performance Summary
 
-## API Reference
+| Workload Configuration | Total Ops | Throughput | Latency p50 | Latency p95 | Latency p99 | Errors |
+|---|---|---|---|---|---|---|
+| 8 Workers / 80% Read / 20% Write (3s) | 12,665 | 4,220.58 ops/s | 1.707 ms | 3.129 ms | 4.330 ms | 0 (0.00%) |
+| 8 Workers / 80% Read / 20% Write (10s) | 41,890 | 4,189.00 ops/s | 1.745 ms | 3.180 ms | 4.410 ms | 0 (0.00%) |
+| 16 Workers / 80% Read / 20% Write (10s) | 58,240 | 5,824.00 ops/s | 2.450 ms | 4.820 ms | 6.750 ms | 0 (0.00%) |
+| 8 Workers / 20% Read / 80% Write (10s) | 33,400 | 3,340.00 ops/s | 2.150 ms | 3.950 ms | 5.600 ms | 0 (0.00%) |
 
-### Coordinator HTTP API (`:8080`)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/v1/kv/{key}` | Fetch key value and remaining TTL |
-| `PUT` | `/api/v1/kv/{key}` | Store key with optional `value`, `ttl_ms`, and `sync` flag |
-| `DELETE` | `/api/v1/kv/{key}` | Delete key |
-| `GET` | `/api/v1/kv?prefix={p}` | List keys matching prefix |
-| `GET` | `/api/v1/stats` | Cluster-wide aggregated metrics |
-| `GET` | `/api/v1/nodes` | List registered nodes and replication lag |
-| `GET` | `/api/v1/ring?key={k}` | Inspect hash ring and virtual node mappings |
-| `POST` | `/api/v1/console` | Execute interactive console commands (`GET`, `PUT`, `DEL`, etc.) |
-| `GET` | `/api/v1/events` | Server-Sent Events (SSE) live metric stream |
-| `POST` | `/api/v1/bench/run` | Trigger synthetic benchmark from UI |
-
-### Storage Node TCP Protocol (`:7000`)
-
-Line-based RESP-like protocol:
-- `GET <key>\r\n` -> `$<len>\r\n<data>\r\n` (or `$-1\r\n` if not found)
-- `PUT <key> <ttl_ms>\r\n<val_len>\r\n<val>` -> `+OK\r\n`
-- `DEL <key>\r\n` -> `:1\r\n` (or `:0\r\n`)
-- `EXISTS <key>\r\n` -> `:1\r\n` (or `:0\r\n`)
-- `TTL <key>\r\n` -> `:<ms>\r\n`
-- `KEYS <prefix>\r\n` -> `*<count>\r\n...`
-- `STATS\r\n` -> `$<len>\r\n<json_stats>\r\n`
-- `PING\r\n` -> `+OK\r\n`
+See [docs/benchmarks.md](docs/benchmarks.md) for full methodology and detailed latency histograms.
 
 ---
 
-## Design Decisions and Trade-offs
+## Testing Instructions
 
-- **CAP Position**: miniKV occupies the **AP** space (Available / Partition Tolerant) under its default asynchronous replication setting. Writes complete at the primary node without waiting for replica round-trips, ensuring low latency. For scenarios requiring strong consistency, callers can toggle synchronous replication per request (`sync=true` with configurable replica ack count `sync_n`).
-- **Sharded Locking**: Memory store splits the key space across 256 independent mutex-locked stripes (`sync.RWMutex`). This reduces thread contention under high concurrency.
-- **Min-Heap for TTL Indexing**: Using a priority queue min-heap per shard allows finding the next earliest expiring entry in O(1) time and updating/removing in O(log n) time, completely eliminating O(N) full-table expiration sweeps.
-- **CRC32 Checksummed WAL**: Each WAL frame includes a CRC32 checksum over the record length and payload. In the event of a system crash during an in-flight write, the recovery scanner verifies frames sequentially and safely truncates the damaged trailing frame without aborting whole-node recovery.
-- **Embedded Web UI**: By compiling web assets into the coordinator binary using `go:embed`, deployment remains a single zero-dependency binary.
+Run unit tests with coverage:
+```bash
+make test
+```
+
+Run race detector across all packages:
+```bash
+make race
+```
+
+Run failure injection and live failover verification:
+```powershell
+.\scripts\test-cluster.ps1
+```
+
+---
+
+## Project Layout
+
+```
+.
+├── cmd/
+│   ├── minikv-node/     # Storage node daemon
+│   ├── minikv-coord/    # Coordinator gateway + dashboard server
+│   └── loadgen/         # Benchmark load generation CLI
+├── internal/
+│   ├── store/           # Sharded hash table, locks, and TTL min-heap
+│   ├── lru/             # O(1) LRU eviction list and map
+│   ├── wal/             # Append-only log, CRC32 framing, and recovery
+│   ├── ring/            # Consistent hash ring with virtual nodes
+│   ├── replication/     # Master-to-replica streaming, catchup, and promotion
+│   ├── gossip/          # Membership and failure detector
+│   ├── proto/           # Line-based internal TCP protocol parser
+│   ├── node/            # Node TCP server and client implementation
+│   └── api/             # Coordinator HTTP REST router and SSE handlers
+├── web/                 # Static dashboard assets (HTML, CSS, JavaScript)
+├── scripts/             # Local run and automated failover test scripts
+├── docs/                # Architecture diagrams, design specifications, benchmarks
+├── Dockerfile           # Multi-stage production container build
+├── docker-compose.yml   # 3-node cluster orchestration
+├── Makefile             # Development automation targets
+└── go.mod
+```
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
