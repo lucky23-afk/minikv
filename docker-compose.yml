@@ -1,0 +1,110 @@
+services:
+  node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: [
+      "minikv-node",
+      "--id", "node-1",
+      "--addr", "0.0.0.0:7000",
+      "--http-addr", "0.0.0.0:7001",
+      "--data-dir", "/data",
+      "--fsync", "every-second"
+    ]
+    volumes:
+      - minikv-node1-data:/data
+    networks:
+      - minikv-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7001/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    restart: unless-stopped
+
+  node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: [
+      "minikv-node",
+      "--id", "node-2",
+      "--addr", "0.0.0.0:7000",
+      "--http-addr", "0.0.0.0:7001",
+      "--data-dir", "/data",
+      "--fsync", "every-second"
+    ]
+    volumes:
+      - minikv-node2-data:/data
+    networks:
+      - minikv-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7001/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    restart: unless-stopped
+
+  node-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: [
+      "minikv-node",
+      "--id", "node-3",
+      "--addr", "0.0.0.0:7000",
+      "--http-addr", "0.0.0.0:7001",
+      "--data-dir", "/data",
+      "--fsync", "every-second"
+    ]
+    volumes:
+      - minikv-node3-data:/data
+    networks:
+      - minikv-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7001/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    restart: unless-stopped
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: [
+      "minikv-coord",
+      "--addr", ":8080",
+      "--nodes", "node-1=node-1:7000=node-1:7001,node-2=node-2:7000=node-2:7001,node-3=node-3:7000=node-3:7001",
+      "--vnodes", "128"
+    ]
+    ports:
+      - "8080:8080"
+    depends_on:
+      node-1:
+        condition: service_healthy
+      node-2:
+        condition: service_healthy
+      node-3:
+        condition: service_healthy
+    networks:
+      - minikv-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/stats"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+      start_period: 2s
+    restart: unless-stopped
+
+volumes:
+  minikv-node1-data:
+  minikv-node2-data:
+  minikv-node3-data:
+
+networks:
+  minikv-net:
+    driver: bridge
