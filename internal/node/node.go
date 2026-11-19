@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -384,7 +385,6 @@ type TCPClient struct {
 	addr string
 	mu   sync.Mutex
 	conn net.Conn
-	r    *proto.Reader
 	w    *proto.Writer
 }
 
@@ -402,7 +402,6 @@ func (c *TCPClient) dial() error {
 		return err
 	}
 	c.conn = conn
-	c.r = proto.NewReader(conn)
 	c.w = proto.NewWriter(conn)
 	return nil
 }
@@ -460,9 +459,6 @@ func (c *TCPClient) SendPUT(key string, ttlMs int64, value []byte) (string, []by
 
 // readResponse reads one protocol response.
 func (c *TCPClient) readResponse() (string, []byte, error) {
-	import_bufio_reader := c.r
-	_ = import_bufio_reader
-
 	// Read the status/type line.
 	buf := make([]byte, 0, 64)
 	b := make([]byte, 1)
@@ -487,7 +483,7 @@ func (c *TCPClient) readResponse() (string, []byte, error) {
 			return line, nil, nil
 		}
 		data := make([]byte, n+2) // +2 for \r\n
-		if _, err := readFull(c.conn, data); err != nil {
+		if _, err := io.ReadFull(c.conn, data); err != nil {
 			return "", nil, err
 		}
 		return line, data[:n], nil
@@ -511,16 +507,4 @@ func (c *TCPClient) readResponse() (string, []byte, error) {
 	default:
 		return line, nil, nil
 	}
-}
-
-func readFull(conn net.Conn, buf []byte) (int, error) {
-	total := 0
-	for total < len(buf) {
-		n, err := conn.Read(buf[total:])
-		total += n
-		if err != nil {
-			return total, err
-		}
-	}
-	return total, nil
 }

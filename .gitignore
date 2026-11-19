@@ -11,10 +11,12 @@ data/
 *.log
 *.snap
 *.tmp
+*.wal
 
 # Coverage & profiling
 coverage.out
 *.pprof
+*.test
 
 # Test outputs
 bench-local.json
@@ -22,6 +24,21 @@ bench-local.md
 bench-results.json
 bench-results.md
 
+# Environment
+.env
+.env.*
+
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Docker override
+docker-compose.override.yml
