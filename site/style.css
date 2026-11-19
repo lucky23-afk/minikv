@@ -1,0 +1,229 @@
+/* miniKV Landing Page Stylesheet */
+:root {
+  --bg-app: #FAFAFA;
+  --bg-card: #FFFFFF;
+  --text-main: #0F172A;
+  --text-secondary: #64748B;
+  --border-color: #E5E7EB;
+  --accent: #1D4ED8;
+  --accent-hover: #1E40AF;
+  --code-bg: #F1F5F9;
+  --status-alive: #15803D;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-app: #0B0F14;
+    --bg-card: #111827;
+    --text-main: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --border-color: #1F2937;
+    --accent: #3B82F6;
+    --accent-hover: #60A5FA;
+    --code-bg: #1E293B;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+header {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 32px;
+  margin-bottom: 40px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+h1 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.version {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.tagline {
+  color: var(--text-secondary);
+  font-size: 15px;
+  max-width: 600px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all 150ms ease;
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  color: #FFFFFF;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-hover);
+}
+
+.btn-secondary {
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  background-color: var(--bg-card);
+}
+
+.btn-secondary:hover {
+  border-color: var(--text-secondary);
+}
+
+section {
+  margin-bottom: 48px;
+}
+
+h2 {
+  font-size: 16px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+p {
+  margin-bottom: 16px;
+  color: var(--text-main);
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.feature-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.feature-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+pre, code {
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 13px;
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 14px 18px;
+  overflow-x: auto;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+pre code {
+  background: transparent;
+  padding: 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+th, td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+td {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+footer {
+  border-top: 1px solid var(--border-color);
+  padding-top: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+footer a:hover {
+  color: var(--accent);
+}
