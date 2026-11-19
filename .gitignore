@@ -1,0 +1,27 @@
+# Binaries
+*.exe
+*.exe~
+bin/
+minikv-node
+minikv-coord
+loadgen
+
+# Runtime data & logs
+data/
+*.log
+*.snap
+*.tmp
+
+# Coverage & profiling
+coverage.out
+*.pprof
+
+# Test outputs
+bench-local.json
+bench-local.md
+bench-results.json
+bench-results.md
+
+# OS files
+.DS_Store
+Thumbs.db

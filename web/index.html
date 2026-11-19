@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>miniKV Cluster Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
+</head>
+<body x-data="minikvApp()" :class="{ 'dark': darkMode }" x-init="initApp()">
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="6" rx="1"/>
+            <rect x="2" y="11" width="20" height="6" rx="1"/>
+            <rect x="2" y="19" width="20" height="6" rx="1"/>
+          </svg>
+        </div>
+        <span class="brand-text">miniKV</span>
+        <span class="badge-v">v1.0</span>
+      </div>
+
+      <nav class="nav-links">
+        <button class="nav-item" :class="{ 'active': currentTab === 'overview' }" @click="currentTab = 'overview'">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Overview
+        </button>
+        <button class="nav-item" :class="{ 'active': currentTab === 'cluster' }" @click="currentTab = 'cluster'">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          Cluster & Ring
+        </button>
+        <button class="nav-item" :class="{ 'active': currentTab === 'explorer' }" @click="currentTab = 'explorer'">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><path d="M14 2v6h6"/><path d="M3 15h6"/><path d="M6 12v6"/></svg>
+          Data Explorer
+        </button>
+        <button class="nav-item" :class="{ 'active': currentTab === 'console' }" @click="currentTab = 'console'">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          Console
+        </button>
+        <button class="nav-item" :class="{ 'active': currentTab === 'persistence' }" @click="currentTab = 'persistence'">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Persistence & Repl
+        </button>
+        <button class="nav-item" :class="{ 'active': currentTab === 'benchmarks' }" @click="currentTab = 'benchmarks'">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12A10 10 0 0 0 12 2v10z"/><path d="M12 2a10 10 0 1 0 10 10H12z"/></svg>
+          Benchmarks
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="theme-toggle" @click="toggleDarkMode()">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <span x-text="darkMode ? 'Light Theme' : 'Dark Theme'"></span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-title">
+          <h1 x-text="tabTitles[currentTab]"></h1>
+          <span class="refresh-indicator" :class="{ 'syncing': syncing }">Live (SSE)</span>
+        </div>
+      </header>
+
+      <div class="content-scroll">
+        <!-- 1. OVERVIEW -->
+        <template x-if="currentTab === 'overview'">
+          <div class="tab-pane">
+            <div class="stats-grid">
+              <div class="stat-card">
+                <span class="stat-label">Nodes Up / Total</span>
+                <span class="stat-val" x-text="stats.nodes_alive + ' / ' + stats.nodes_total"></span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Total Keys</span>
+                <span class="stat-val font-mono" x-text="stats.keys"></span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Memory Usage</span>
+                <span class="stat-val font-mono" x-text="formatBytes(stats.bytes)"></span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Hit Rate</span>
+                <span class="stat-val" x-text="stats.hit_rate.toFixed(1) + '%'"></span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Evictions</span>
+                <span class="stat-val font-mono" x-text="stats.evictions"></span>
+              </div>
+            </div>
+
+            <!-- Canvas Metric Chart -->
+            <div class="card mt-6">
+              <div class="card-header">
+                <h2>Throughput & Latency (Last 5 Minutes)</h2>
+              </div>
+              <div class="card-body">
+                <canvas id="metricsChart" width="800" height="220" class="canvas-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 2. CLUSTER & RING -->
+        <template x-if="currentTab === 'cluster'">
+          <div class="tab-pane">
+            <div class="grid-2">
+              <div class="card">
+                <div class="card-header flex-between">
+                  <h2>Storage Nodes</h2>
+                  <button class="btn btn-primary" @click="showAddModal = true">Add Node</button>
+                </div>
+                <div class="card-body p-0">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Role</th>
+                        <th>State</th>
+                        <th>Keys</th>
+                        <th>Lag</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <template x-for="n in nodes" :key="n.id">
+                        <tr>
+                          <td class="font-mono font-medium" x-text="n.id"></td>
+                          <td><span class="badge" x-text="n.role"></span></td>
+                          <td>
+                            <span class="status-pill" :class="'status-' + n.state" x-text="n.state"></span>
+                          </td>
+                          <td class="font-mono" x-text="n.keys"></td>
+                          <td class="font-mono" x-text="n.lag"></td>
+                          <td>
+                            <button class="btn btn-sm btn-danger" @click="removeNode(n.id)">Remove</button>
+                          </td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Consistent Hash Ring Visualization -->
+              <div class="card">
+                <div class="card-header">
+                  <h2>Consistent Hash Ring</h2>
+                </div>
+                <div class="card-body">
+                  <div class="ring-controls">
+                    <input type="text" class="input" placeholder="Lookup key (e.g. user:100)" x-model="lookupKey" @input="updateRingLookup()">
+                  </div>
+                  <div class="ring-container">
+                    <svg viewBox="0 0 300 300" class="ring-svg">
+                      <circle cx="150" cy="150" r="100" fill="none" stroke="currentColor" class="ring-track" stroke-width="4"/>
+                      <template x-for="(vn, idx) in ringVNodes" :key="idx">
+                        <circle :cx="getCoord(vn.Hash, 100).x" :cy="getCoord(vn.Hash, 100).y" r="3" :fill="getNodeColor(vn.NodeID)"/>
+                      </template>
+                      <circle cx="150" cy="150" r="16" fill="var(--bg-card)" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                  </div>
+                  <div class="mapped-info" x-show="lookupMappedNodes.length > 0">
+                    <span class="text-muted">Key Maps To:</span>
+                    <span class="font-mono font-bold text-accent" x-text="lookupMappedNodes.join(' -> ')"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 3. DATA EXPLORER -->
+        <template x-if="currentTab === 'explorer'">
+          <div class="tab-pane">
+            <div class="card">
+              <div class="card-header flex-between">
+                <div class="flex-gap">
+                  <input type="text" class="input" placeholder="Prefix filter (e.g. user:)" x-model="keyPrefix" @input="fetchKeys()">
+                  <button class="btn" @click="fetchKeys()">Refresh</button>
+                </div>
+                <button class="btn btn-primary" @click="openKeyModal()">Set Key</button>
+              </div>
+              <div class="card-body p-0">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Key</th>
+                      <th>Value Preview</th>
+                      <th>TTL (ms)</th>
+                      <th>Size</th>
+                      <th>Node</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="item in keyList" :key="item.key">
+                      <tr>
+                        <td class="font-mono font-medium" x-text="item.key"></td>
+                        <td class="font-mono text-muted" x-text="item.value.slice(0, 48)"></td>
+                        <td class="font-mono" x-text="item.ttl_ms === -1 ? 'None' : item.ttl_ms"></td>
+                        <td class="font-mono" x-text="formatBytes(item.size)"></td>
+                        <td class="font-mono" x-text="item.node_id"></td>
+                        <td>
+                          <button class="btn btn-sm btn-danger" @click="deleteKey(item.key)">Delete</button>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 4. CONSOLE -->
+        <template x-if="currentTab === 'console'">
+          <div class="tab-pane">
+            <div class="card console-card">
+              <div class="card-header">
+                <h2>Interactive Cluster CLI</h2>
+              </div>
+              <div class="console-output" id="consoleOutput">
+                <div class="console-line text-muted">miniKV Redis-like Interactive Console. Type HELP, GET, PUT, DEL, TTL, or STATS.</div>
+                <template x-for="(line, idx) in consoleLines" :key="idx">
+                  <div class="console-line">
+                    <span class="console-prompt">&gt;</span> <span class="font-mono" x-text="line.cmd"></span>
+                    <div class="console-res font-mono" x-text="line.res"></div>
+                  </div>
+                </template>
+              </div>
+              <form class="console-input-bar" @submit.prevent="runConsoleCommand()">
+                <span class="console-prompt font-mono">&gt;</span>
+                <input type="text" class="console-input font-mono" placeholder="PUT user:101 JaneDoe 60000" x-model="consoleInput" autofocus>
+                <button type="submit" class="btn btn-primary">Send</button>
+              </form>
+            </div>
+          </div>
+        </template>
+
+        <!-- 5. PERSISTENCE & REPLICATION -->
+        <template x-if="currentTab === 'persistence'">
+          <div class="tab-pane">
+            <div class="card mb-6">
+              <div class="card-header flex-between">
+                <h2>Snapshots & Write-Ahead Log</h2>
+                <button class="btn btn-primary" @click="triggerSnapshot()">Trigger Cluster Snapshot</button>
+              </div>
+              <div class="card-body">
+                <p class="text-secondary mb-4">miniKV storage nodes maintain append-only Write-Ahead Logs with per-record CRC32 verification and snapshot truncation. Crash recovery replays snapshot state then unreaped WAL frames.</p>
+                <div class="stats-grid">
+                  <div class="stat-card">
+                    <span class="stat-label">Active Nodes</span>
+                    <span class="stat-val font-mono" x-text="stats.nodes_alive"></span>
+                  </div>
+                  <div class="stat-card">
+                    <span class="stat-label">Total Persisted Keys</span>
+                    <span class="stat-val font-mono" x-text="stats.keys"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2>Replication Stream Status</h2>
+              </div>
+              <div class="card-body p-0">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Node ID</th>
+                      <th>Role</th>
+                      <th>Replication Lag</th>
+                      <th>Health</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="n in nodes" :key="n.id">
+                      <tr>
+                        <td class="font-mono font-medium" x-text="n.id"></td>
+                        <td><span class="badge" x-text="n.role"></span></td>
+                        <td class="font-mono" x-text="n.lag + ' records'"></td>
+                        <td>
+                          <span class="status-pill" :class="'status-' + n.state" x-text="n.state"></span>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 6. BENCHMARKS -->
+        <template x-if="currentTab === 'benchmarks'">
+          <div class="tab-pane">
+            <div class="card mb-6">
+              <div class="card-header">
+                <h2>Run In-Cluster Benchmark</h2>
+              </div>
+              <div class="card-body">
+                <form class="bench-form" @submit.prevent="runBenchmark()">
+                  <div class="form-group">
+                    <label>Concurrency (Goroutines)</label>
+                    <input type="number" class="input" x-model.number="benchForm.concurrency" min="1" max="100">
+                  </div>
+                  <div class="form-group">
+                    <label>Duration (Seconds)</label>
+                    <input type="number" class="input" x-model.number="benchForm.duration_sec" min="1" max="60">
+                  </div>
+                  <div class="form-group">
+                    <label>Read Ratio (0.0 to 1.0)</label>
+                    <input type="number" step="0.1" class="input" x-model.number="benchForm.read_ratio" min="0" max="1">
+                  </div>
+                  <button type="submit" class="btn btn-primary" :disabled="benchRunning">
+                    <span x-text="benchRunning ? 'Running Test...' : 'Start Benchmark'"></span>
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h2>Historical Runs</h2>
+              </div>
+              <div class="card-body p-0">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Concurrency</th>
+                      <th>Duration</th>
+                      <th>Throughput</th>
+                      <th>p50 Latency</th>
+                      <th>p95 Latency</th>
+                      <th>p99 Latency</th>
+                      <th>Total Ops</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="run in benchHistory" :key="run.id">
+                      <tr>
+                        <td class="font-mono" x-text="run.timestamp"></td>
+                        <td class="font-mono" x-text="run.concurrency"></td>
+                        <td class="font-mono" x-text="run.duration"></td>
+                        <td class="font-mono text-accent font-bold" x-text="run.throughput.toFixed(0) + ' ops/s'"></td>
+                        <td class="font-mono" x-text="run.p50_ms.toFixed(2) + ' ms'"></td>
+                        <td class="font-mono" x-text="run.p95_ms.toFixed(2) + ' ms'"></td>
+                        <td class="font-mono" x-text="run.p99_ms.toFixed(2) + ' ms'"></td>
+                        <td class="font-mono" x-text="run.total_ops"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </main>
+  </div>
+
+  <!-- Key Modal -->
+  <div class="modal-backdrop" x-show="showKeyModal" style="display: none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Set Key Value</h2>
+        <button class="btn-close" @click="showKeyModal = false">&times;</button>
+      </div>
+      <form @submit.prevent="saveKey()">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Key</label>
+            <input type="text" class="input font-mono" x-model="modalKey.key" required>
+          </div>
+          <div class="form-group">
+            <label>Value</label>
+            <textarea class="input font-mono" rows="3" x-model="modalKey.val" required></textarea>
+          </div>
+          <div class="form-group">
+            <label>TTL in Milliseconds (0 for no expiry)</label>
+            <input type="number" class="input font-mono" x-model.number="modalKey.ttl">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn" @click="showKeyModal = false">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Key</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
