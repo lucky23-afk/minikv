@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kaushik/minikv/internal/lru"
+	"github.com/lucky23-afk/minikv/internal/lru"
 )
 
 // shard is one stripe of the Store. It owns a hash table, an LRU,

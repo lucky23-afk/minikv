@@ -15,10 +15,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/kaushik/minikv/internal/gossip"
-	"github.com/kaushik/minikv/internal/node"
-	"github.com/kaushik/minikv/internal/replication"
-	"github.com/kaushik/minikv/internal/ring"
+	"github.com/lucky23-afk/minikv/internal/gossip"
+	"github.com/lucky23-afk/minikv/internal/node"
+	"github.com/lucky23-afk/minikv/internal/replication"
+	"github.com/lucky23-afk/minikv/internal/ring"
 )
 
 // Coordinator coordinates cluster requests, ring routing, and serves the dashboard.

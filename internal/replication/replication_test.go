@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaushik/minikv/internal/proto"
+	"github.com/lucky23-afk/minikv/internal/proto"
 )
 
 func mockNodeServer(t *testing.T) (net.Listener, func()) {

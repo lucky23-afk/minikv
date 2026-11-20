@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kaushik/minikv/internal/wal"
+	"github.com/lucky23-afk/minikv/internal/wal"
 )
 
 func getFreePort(t *testing.T) int {

@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kaushik/minikv/internal/proto"
-	"github.com/kaushik/minikv/internal/store"
-	"github.com/kaushik/minikv/internal/wal"
+	"github.com/lucky23-afk/minikv/internal/proto"
+	"github.com/lucky23-afk/minikv/internal/store"
+	"github.com/lucky23-afk/minikv/internal/wal"
 )
 
 // Config holds node configuration.

@@ -1,4 +1,4 @@
-module github.com/kaushik/minikv
+module github.com/lucky23-afk/minikv
 
 go 1.24.6
 

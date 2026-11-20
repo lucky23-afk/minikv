@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kaushik/minikv/internal/node"
+	"github.com/lucky23-afk/minikv/internal/node"
 )
 
 // Role defines whether a node acts as Master or Replica for its shard.
