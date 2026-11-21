@@ -1,4 +1,4 @@
-# miniKV
+# MiniKV
 
 miniKV is a miniature distributed key-value store in Go (1.22+) featuring consistent hashing with virtual nodes, append-only Write-Ahead Logging with CRC32 frame checksums, O(1) LRU eviction, active min-heap TTL expiration, configurable asynchronous and synchronous replication with automatic failover promotion, gossip-based failure detection, and an embedded minimalist web dashboard.
 
