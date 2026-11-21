@@ -120,7 +120,7 @@ func TestNode_BasicCommands(t *testing.T) {
 	}
 
 	// 5. KEYS
-	line, data, err = client.SendLine("KEYS greet")
+	line, _, err = client.SendLine("KEYS greet")
 	if err != nil {
 		t.Fatalf("KEYS: %v", err)
 	}
@@ -142,8 +142,8 @@ func TestNode_BasicCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET after DEL: %v", err)
 	}
-	if data != nil {
-		t.Fatalf("expected nil data after DEL, got %q", string(data))
+	if line != "$-1" || data != nil {
+		t.Fatalf("expected nil data ($-1) after DEL, got line=%q, data=%q", line, string(data))
 	}
 }
 
